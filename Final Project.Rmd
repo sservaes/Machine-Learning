@@ -1,7 +1,7 @@
 ---
 title: "Course Project - Machine Learning"
 author: "Stijn Servaes"
-date: "05/06/2019"
+date: "18/10/2019"
 output: html_document
 ---
 
