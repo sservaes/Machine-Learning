@@ -1,0 +1,124 @@
+---
+title: "Course Project - Machine Learning"
+author: "Stijn Servaes"
+date: "05/06/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+set.seed(250)
+library(caret)
+library(dplyr)
+library(doParallel)
+```
+
+## Intro
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+---
+
+## Read Data
+First we download the available data by the links that were provided.
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+```{r data, include = TRUE}
+train <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", header = TRUE, na.strings=c("NA","#DIV/0!",""))
+test <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", header = TRUE, na.strings=c("NA","#DIV/0!",""))
+
+str(train)
+```
+
+
+---
+
+## Data Cleaning
+As the dataset contains columns with mostly (>95%) 'NA'-data these were first removed. Furthermore column 1-6 contained no data that would be valuable as a predictor. These were removed as well. Lastly, any variables with zero variance were removed as well as these would not be valuable predictors.
+```{r cleaning}
+# Remove NA
+train_sel <- subset(train, select=colMeans(is.na(train))<0.05)
+
+# Remove irrelevant data
+train_sel <- train_sel[,7:length(train_sel)]
+
+# Remove zero variance
+NZV <- nearZeroVar(train_sel, saveMetrics = TRUE)
+NZV # all false, none to remove
+
+# Generate training and testing dataset
+inTrain1 <- createDataPartition(train_sel$classe, p=0.6, list=FALSE)
+Train1 <- train_sel[inTrain1,]
+Test1 <- train_sel[-inTrain1,]
+
+dim(Train1)
+dim(Test1)
+```
+
+---
+
+## Prediction
+For the prediction a random forest model was chosen based on the fact that this is a classification problem in which this model typically excels.
+The model is fitted on the generated training data set
+
+### Random Forest
+```{r forest}
+# speed up calculation by making use of multiple threads on CPU
+cl <- makePSOCKcluster(10)
+registerDoParallel(cl)
+fit_DF <- train(classe~., data=Train1, method="rf", trControl=trainControl(method="cv", number=5), verbose=FALSE)
+stopCluster(cl)
+
+
+print(fit_DF) # print model
+plot(fit_DF) # plot model
+names(fit_DF$finalModel) # names of the most valuable predictors
+```
+The model shows that a total number of 27 predictors achieves the best prediction result (99.5%). This is visible from the plot as well. The most valuable predictors are listed as well.
+
+### Model Error
+#### Out of sample error
+Using the generated test data set the out of sample error can be estimated. A confusion matrix is generated in order to calculate the statistics of the observed and predicted classes.
+```{r out_error}
+# out of sample error
+predict_test <- predict(fit_DF, Test1)
+confusionMatrix(Test1$classe,predict_test)
+```
+
+The out of sample accuracy is 99.6%
+
+
+#### In sample error
+Using the generated training data set the in sample error can be estimated. A confusion matrix is generated in order to calculate the statistics of the observed and predicted classes.
+```{r in_error}
+# in sample error
+predict_train <- predict(fit_DF, Train1)
+confusionMatrix(Train1$classe,predict_train)
+```
+
+The in sample accuracy is 100%.
+
+
+### Final test prediction
+Finally, the model is tested with the actual received Test data set. The solutions are also written out as files.
+```{r predict}
+# predict final test set
+predict_final <- predict(fit_DF, test)
+print(predict_final)
+
+# write out the prediction for the test set
+pml_write_files = function(x) {
+  for (i in 1:length(x)) {
+    filename = paste0("problem_id_", i, ".txt")
+    write.table(x[i], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+  }
+}
+
+pml_write_files(predict_final)
+```
